@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git AI-HOT Auto Sync"
+  short_description: "Auto-sync AI-HOT with safe Git pull, commit, and push loops."
+  default_prompt: "Use $git-ai-hot-auto-sync to keep AI-HOT synchronized with remote collaborators and notify me if conflicts require manual resolution."
