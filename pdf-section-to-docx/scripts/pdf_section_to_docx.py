@@ -21,6 +21,7 @@ PAREN_ENUM_RE = re.compile(r"^[（(]\s*\d+\s*[)）]")
 GUIDE_TITLE_RE = re.compile(r".{2,}指南$")
 TABLE_TITLE_RE = re.compile(r"^表\s*\d+")
 TABLE_SOURCE_RE = re.compile(r"^(数据来源|来源)[:：]")
+DATE_LED_SENTENCE_RE = re.compile(r"^\d{4}\s*年(?:\s*\d{1,2}\s*月(?:\s*\d{1,2}\s*日)?)?(起|，|,|度|内|末|初)")
 
 
 @dataclasses.dataclass
@@ -221,6 +222,9 @@ def looks_like_heading(text: str, font_size: Optional[float], body_font_size: fl
         return None
 
     if is_guide_title(normalized):
+        return None
+
+    if DATE_LED_SENTENCE_RE.match(normalized):
         return None
 
     if TOC_LEADER_RE.search(normalized):

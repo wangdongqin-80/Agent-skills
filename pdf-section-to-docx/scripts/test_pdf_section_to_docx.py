@@ -130,6 +130,14 @@ class PdfSectionToDocxTests(unittest.TestCase):
         )
         self.assertIsNone(level)
 
+    def test_looks_like_heading_rejects_date_led_body_sentence(self):
+        level = MODULE.looks_like_heading(
+            "2021 \u5e74 1 \u6708 1 \u65e5\u8d77\uff0c\u7eb3\u7a0e\u4e49\u52a1\u4eba\u4e3a\u5728\u963f\u5c14\u5df4\u5c3c\u4e9a\u5e74\u6536\u5165\u8d85\u8fc7 800",
+            16.0,
+            12.0,
+        )
+        self.assertIsNone(level)
+
 
 if __name__ == "__main__":
     unittest.main()
