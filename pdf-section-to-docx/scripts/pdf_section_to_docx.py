@@ -12,8 +12,9 @@ import fitz
 from docx import Document
 
 
+DEFAULT_OUTPUT_ROOT = Path(r"D:\Codex_output")
 ILLEGAL_FILENAME_CHARS = r'[<>:"/\\|?*]'
-HEADING_NUMBER_RE = re.compile(r"^(\d+(?:\.\d+){0,5})[\s\u3000]+(.+)$")
+HEADING_NUMBER_RE = re.compile(r"^(\d+\.\d+(?:\.\d+){0,4})[\s\u3000]+(.+)$")
 CHINESE_HEADING_RE = re.compile(r"^第[一二三四五六七八九十百千0-9]+[编章节部分篇](?:[\s\u3000].*|$)")
 TOC_LEADER_RE = re.compile(r"\.{5,}\s*\d+\s*$")
 CHAPTER_SUMMARY_RE = re.compile(r"^第[一二三四五六七八九十百千0-9]+[编章节部分篇](主要|重点|概述|介绍|从)")
@@ -22,6 +23,67 @@ GUIDE_TITLE_RE = re.compile(r".{2,}指南$")
 TABLE_TITLE_RE = re.compile(r"^表\s*\d+")
 TABLE_SOURCE_RE = re.compile(r"^(数据来源|来源)[:：]")
 DATE_LED_SENTENCE_RE = re.compile(r"^\d{4}\s*年(?:\s*\d{1,2}\s*月(?:\s*\d{1,2}\s*日)?)?(起|，|,|度|内|末|初)")
+SENTENCE_PUNCT_RE = re.compile(r"[，；。！？]")
+BRACKET_LEAD_RE = re.compile(r"^[\[【(（]")
+FORMULA_LEAD_RE = re.compile(r"^\d+\s*[+\-*/]")
+CIRCLED_ENUM_RE = re.compile(r"^[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]")
+LATIN_ENUM_RE = re.compile(r"^[A-Z][.．、]")
+APPENDIX_ITEM_RE = re.compile(r"^[一二三四五六七八九十]+[、.．]\s*.+$")
+APPENDIX_LETTER_HEADING_RE = re.compile(r"^附录\s*[A-ZＡ-Ｚ](?:[\s\u3000]+|[：:])?.+$")
+PERSON_NAME_LINE_RE = re.compile(r"^[\u4e00-\u9fff]{2,4}(?:[\s\u3000]+[\u4e00-\u9fff]{2,4}){1,}$")
+FORMAL_SHORT_HEADINGS = {"前言", "目录", "附录"}
+HEADING_SUFFIX_FRAGMENTS = {"业", "表", "图", "览表", "税率表"}
+
+
+def heading_remainder_looks_like_body(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", text.strip())
+    if not normalized:
+        return False
+
+    if SENTENCE_PUNCT_RE.search(normalized):
+        return True
+
+    if FORMULA_LEAD_RE.match(normalized):
+        return True
+
+    if normalized.startswith(("+", "-", "*", "/")):
+        return True
+
+    if BRACKET_LEAD_RE.match(normalized):
+        return True
+
+    if re.match(r"^\d{4}\s*年", normalized):
+        return True
+
+    if re.match(r"^\d{1,2}\s*月", normalized):
+        return True
+
+    if re.match(r"^\d+\s*(个|款|项|条|年|月|日)", normalized):
+        return True
+
+    if re.match(r"^\d+(?:\.\d+)?\s*(亿|万|元|美元|欧元|新台币|%)", normalized):
+        return True
+
+    return False
+
+
+def is_formal_short_heading(text: str) -> bool:
+    normalized = re.sub(r"\s+", "", text.strip())
+    return normalized in FORMAL_SHORT_HEADINGS
+
+
+def looks_like_person_name_line(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", text.strip())
+    if not PERSON_NAME_LINE_RE.fullmatch(normalized):
+        return False
+
+    parts = [part for part in re.split(r"[\s\u3000]+", normalized) if part]
+    return len(parts) >= 2
+
+
+def looks_like_compact_person_names(text: str) -> bool:
+    compact = re.sub(r"\s+", "", text.strip())
+    return bool(re.fullmatch(r"[\u4e00-\u9fff]{4,8}", compact))
 
 
 @dataclasses.dataclass
@@ -147,13 +209,23 @@ def is_numbered_heading(text: str) -> bool:
 def should_merge_heading_pair(previous: Block, current: Block) -> bool:
     if previous.kind != "heading" or current.kind != "heading":
         return False
-    if (previous.level or 1) != (current.level or 1):
-        return False
 
     previous_text = re.sub(r"\s+", " ", previous.text.strip())
     current_text = re.sub(r"\s+", " ", current.text.strip())
     if not previous_text or not current_text:
         return False
+
+    if is_formal_short_heading(previous_text + current_text):
+        return True
+
+    if APPENDIX_LETTER_HEADING_RE.match(previous_text):
+        if is_numbered_heading(current_text):
+            return False
+        if PAREN_ENUM_RE.match(current_text) or CIRCLED_ENUM_RE.match(current_text):
+            return False
+        if heading_remainder_looks_like_body(current_text):
+            return False
+        return len(re.sub(r"\s+", "", current_text)) <= 3
 
     if not CHINESE_HEADING_RE.match(previous_text):
         return False
@@ -161,7 +233,11 @@ def should_merge_heading_pair(previous: Block, current: Block) -> bool:
         return False
     if PAREN_ENUM_RE.match(current_text):
         return False
+    if CIRCLED_ENUM_RE.match(current_text):
+        return False
     if is_guide_title(current_text):
+        return False
+    if heading_remainder_looks_like_body(current_text):
         return False
     if len(current_text) > 20:
         return False
@@ -174,15 +250,90 @@ def merge_multiline_headings(blocks: Sequence[Block]) -> List[Block]:
     for block in blocks:
         if merged and should_merge_heading_pair(merged[-1], block):
             previous = merged[-1]
+            previous_text = previous.text.strip()
+            current_text = block.text.strip()
+            merged_text = (
+                previous_text + current_text
+                if is_formal_short_heading(previous_text + current_text)
+                else f"{previous_text} {current_text}"
+            )
             merged[-1] = Block(
                 "heading",
-                f"{previous.text.strip()} {block.text.strip()}",
+                merged_text,
                 level=previous.level,
                 bbox=previous.bbox,
             )
             continue
         merged.append(block)
     return merged
+
+
+def merge_heading_fragments(blocks: Sequence[Block]) -> List[Block]:
+    merged: List[Block] = []
+    for block in blocks:
+        if merged:
+            previous = merged[-1]
+            previous_text = previous.text.strip()
+            current_text = block.text.strip()
+            compact_current = re.sub(r"\s+", "", current_text)
+            if (
+                previous.kind == "heading"
+                and APPENDIX_LETTER_HEADING_RE.match(previous_text)
+                and block.kind == "paragraph"
+                and compact_current in HEADING_SUFFIX_FRAGMENTS
+                and compact_current not in FORMAL_SHORT_HEADINGS
+                and not heading_remainder_looks_like_body(current_text)
+            ):
+                merged[-1] = Block(
+                    "heading",
+                    f"{previous_text}{compact_current}",
+                    level=previous.level,
+                    bbox=previous.bbox,
+                )
+                continue
+        merged.append(block)
+    return merged
+
+
+def drop_name_only_headings(blocks: Sequence[Block]) -> List[Block]:
+    filtered: List[Block] = []
+    parent_headings: List[Block] = []
+
+    for block in blocks:
+        if block.kind == "heading":
+            level = block.level or 1
+            parent_headings = [item for item in parent_headings if (item.level or 1) < level]
+            parent_title = parent_headings[-1].text if parent_headings else ""
+            if (looks_like_person_name_line(block.text) or looks_like_compact_person_names(block.text)) and parent_title in {"参考文献"}:
+                filtered.append(Block("paragraph", re.sub(r"\s+", "", block.text.strip()), bbox=block.bbox))
+                continue
+            parent_headings.append(block)
+        filtered.append(block)
+
+    return filtered
+
+
+def promote_appendix_items(blocks: Sequence[Block]) -> List[Block]:
+    promoted: List[Block] = []
+    in_appendix = False
+
+    for block in blocks:
+        normalized = re.sub(r"\s+", "", block.text.strip())
+        if block.kind == "heading" and normalized == "附录":
+            in_appendix = True
+            promoted.append(block)
+            continue
+
+        if in_appendix and APPENDIX_ITEM_RE.match(block.text.strip()):
+            promoted.append(Block("heading", block.text, level=2, bbox=block.bbox))
+            continue
+
+        if in_appendix and block.kind == "heading" and (block.level or 1) <= 1 and normalized != "附录":
+            in_appendix = False
+
+        promoted.append(block)
+
+    return promoted
 
 
 def is_guide_title(text: str) -> bool:
@@ -264,16 +415,31 @@ def looks_like_heading(text: str, font_size: Optional[float], body_font_size: fl
     if not normalized:
         return None
 
+    if TOC_LEADER_RE.search(normalized):
+        return None
+
+    if is_formal_short_heading(normalized):
+        return 1
+
+    if APPENDIX_LETTER_HEADING_RE.match(normalized):
+        return 1
+
     if PAREN_ENUM_RE.match(normalized):
+        return None
+
+    if CIRCLED_ENUM_RE.match(normalized):
+        return None
+
+    if LATIN_ENUM_RE.match(normalized):
         return None
 
     if is_guide_title(normalized):
         return None
 
-    if DATE_LED_SENTENCE_RE.match(normalized):
+    if looks_like_person_name_line(normalized):
         return None
 
-    if TOC_LEADER_RE.search(normalized):
+    if DATE_LED_SENTENCE_RE.match(normalized):
         return None
 
     if CHAPTER_SUMMARY_RE.match(normalized):
@@ -281,6 +447,8 @@ def looks_like_heading(text: str, font_size: Optional[float], body_font_size: fl
 
     match = HEADING_NUMBER_RE.match(normalized)
     if match:
+        if heading_remainder_looks_like_body(match.group(2)):
+            return None
         return min(match.group(1).count(".") + 1, 6)
 
     if CHINESE_HEADING_RE.match(normalized):
@@ -292,10 +460,19 @@ def looks_like_heading(text: str, font_size: Optional[float], body_font_size: fl
     if len(normalized) > 40:
         return None
 
-    if font_size is None:
-        return 3 if len(normalized) <= 20 else None
+    if heading_remainder_looks_like_body(normalized):
+        return None
 
-    if len(normalized) > 20:
+    compact = re.sub(r"\s+", "", normalized)
+    if compact not in FORMAL_SHORT_HEADINGS and len(compact) <= 2:
+        return None
+
+    if font_size is None:
+        if len(normalized) > 12 or re.search(r"\d", normalized):
+            return None
+        return 3
+
+    if len(normalized) > 12 or re.search(r"\d", normalized):
         return None
 
     if font_size >= body_font_size + 5:
@@ -512,6 +689,9 @@ def process_pdf(input_pdf: Path, output_dir: Path, ocr_lang: str, min_direct_cha
 
     all_blocks = filter_redundant_guide_lines(all_blocks)
     all_blocks = merge_multiline_headings(all_blocks)
+    all_blocks = merge_heading_fragments(all_blocks)
+    all_blocks = promote_appendix_items(all_blocks)
+    all_blocks = drop_name_only_headings(all_blocks)
     guide_title = find_guide_title(all_blocks)
     sections = split_sections(all_blocks)
     if not sections:
@@ -557,7 +737,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output-dir",
         type=Path,
         default=None,
-        help="Directory for generated DOCX files. Defaults to <pdf-stem>-sections next to the PDF.",
+        help="Directory for generated DOCX files. Defaults to D:\\Codex_output\\<pdf-stem>-sections.",
     )
     parser.add_argument(
         "--ocr-lang",
@@ -577,7 +757,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     input_pdf = args.input_pdf.resolve()
-    output_dir = args.output_dir or input_pdf.with_name(f"{input_pdf.stem}-sections")
+    output_dir = args.output_dir or DEFAULT_OUTPUT_ROOT / f"{input_pdf.stem}-sections"
 
     process_pdf(input_pdf, output_dir.resolve(), args.ocr_lang, args.min_direct_chars)
     return 0

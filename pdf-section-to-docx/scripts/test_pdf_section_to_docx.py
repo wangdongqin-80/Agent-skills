@@ -98,6 +98,19 @@ class PdfSectionToDocxTests(unittest.TestCase):
         self.assertEqual(sections[0].title, "\u7b2c\u4e00\u8282")
         self.assertEqual([block.text for block in sections[0].content], ["\u6b63\u6587"])
 
+    def test_drop_name_only_subheading_under_references(self):
+        blocks = [
+            MODULE.Block("heading", "\u53c2\u8003\u6587\u732e", level=1),
+            MODULE.Block("heading", "\u8c2d\u6620\u8377\u674e\u73c2", level=3),
+            MODULE.Block("paragraph", "58"),
+        ]
+
+        filtered = MODULE.drop_name_only_headings(blocks)
+        sections = MODULE.split_sections(filtered)
+
+        self.assertEqual([section.title for section in sections], ["\u53c2\u8003\u6587\u732e"])
+        self.assertEqual([block.text for block in sections[0].content], ["\u8c2d\u6620\u8377\u674e\u73c2", "58"])
+
     def test_merge_multiline_chapter_heading(self):
         blocks = [
             MODULE.Block("heading", "\u7b2c\u516d\u7ae0 \u5728\u963f\u5c14\u5df4\u5c3c\u4e9a\u6295\u8d44\u53ef\u80fd\u5b58\u5728\u7684", level=1),
@@ -118,6 +131,93 @@ class PdfSectionToDocxTests(unittest.TestCase):
                 "6.1 \u4fe1\u606f\u62a5\u544a\u98ce\u9669",
             ],
         )
+
+    def test_merge_multiline_chapter_heading_allows_mismatched_levels(self):
+        blocks = [
+            MODULE.Block("heading", "\u7b2c\u4e00\u7ae0", level=1),
+            MODULE.Block("heading", "\u53f0\u6e7e\u5730\u533a\u7ecf\u6d4e\u6982\u51b5", level=2),
+        ]
+
+        merged = MODULE.merge_multiline_headings(blocks)
+
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0].text, "\u7b2c\u4e00\u7ae0 \u53f0\u6e7e\u5730\u533a\u7ecf\u6d4e\u6982\u51b5")
+        self.assertEqual(merged[0].level, 1)
+
+    def test_merge_multiline_short_special_heading(self):
+        blocks = [
+            MODULE.Block("heading", "\u524d", level=1),
+            MODULE.Block("heading", "\u8a00", level=1),
+            MODULE.Block("paragraph", "\u6b63\u6587"),
+        ]
+
+        merged = MODULE.merge_multiline_headings(blocks)
+
+        self.assertEqual(len(merged), 2)
+        self.assertEqual(merged[0].text, "\u524d\u8a00")
+        self.assertEqual(merged[0].level, 1)
+
+    def test_merge_multiline_appendix_heading(self):
+        blocks = [
+            MODULE.Block("heading", "\u9644", level=1),
+            MODULE.Block("heading", "\u5f55", level=1),
+            MODULE.Block("paragraph", "\u6b63\u6587"),
+        ]
+
+        merged = MODULE.merge_multiline_headings(blocks)
+
+        self.assertEqual(len(merged), 2)
+        self.assertEqual(merged[0].text, "\u9644\u5f55")
+        self.assertEqual(merged[0].level, 1)
+
+    def test_merge_multiline_appendix_letter_heading(self):
+        blocks = [
+            MODULE.Block("heading", "\u9644\u5f55 A \u963f\u5c14\u53ca\u5229\u4e9a\u653f\u5e9c\u90e8\u95e8\u548c\u76f8\u5173\u673a\u6784\u4e00", level=1),
+            MODULE.Block("heading", "\u89c8\u8868", level=1),
+        ]
+
+        merged = MODULE.merge_multiline_headings(blocks)
+
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0].text, "\u9644\u5f55 A \u963f\u5c14\u53ca\u5229\u4e9a\u653f\u5e9c\u90e8\u95e8\u548c\u76f8\u5173\u673a\u6784\u4e00 \u89c8\u8868")
+
+    def test_merge_appendix_heading_with_short_paragraph_fragment(self):
+        blocks = [
+            MODULE.Block("heading", "\u9644\u5f55 D \u5728\u963f\u5c14\u53ca\u5229\u4e9a\u6295\u8d44\u7684\u4e3b\u8981\u4e2d\u8d44\u4f01", level=1),
+            MODULE.Block("paragraph", "\u4e1a"),
+            MODULE.Block("paragraph", "\u5185\u5bb9"),
+        ]
+
+        merged = MODULE.merge_heading_fragments(blocks)
+
+        self.assertEqual(merged[0].text, "\u9644\u5f55 D \u5728\u963f\u5c14\u53ca\u5229\u4e9a\u6295\u8d44\u7684\u4e3b\u8981\u4e2d\u8d44\u4f01\u4e1a")
+        self.assertEqual(merged[1].text, "\u5185\u5bb9")
+
+    def test_promote_appendix_items_under_appendix_heading(self):
+        blocks = [
+            MODULE.Block("heading", "\u9644\u5f55", level=1),
+            MODULE.Block("paragraph", "\u4e00\u3001\u4e24\u5cb8\u7a0e\u6cd5\u672f\u8bed\u5bf9\u6bd4\u8868"),
+            MODULE.Block("paragraph", "\u5185\u5bb9"),
+        ]
+
+        promoted = MODULE.promote_appendix_items(blocks)
+        sections = MODULE.split_sections(promoted)
+
+        self.assertEqual([section.title for section in sections], ["\u9644\u5f55", "\u4e00\u3001\u4e24\u5cb8\u7a0e\u6cd5\u672f\u8bed\u5bf9\u6bd4\u8868"])
+        self.assertEqual([heading.text for heading in sections[1].heading_path], ["\u9644\u5f55", "\u4e00\u3001\u4e24\u5cb8\u7a0e\u6cd5\u672f\u8bed\u5bf9\u6bd4\u8868"])
+
+    def test_promote_appendix_items_relevels_existing_heading(self):
+        blocks = [
+            MODULE.Block("heading", "\u9644\u5f55", level=1),
+            MODULE.Block("heading", "\u4e00\u3001\u4e24\u5cb8\u7a0e\u6cd5\u672f\u8bed\u5bf9\u6bd4\u8868", level=1),
+            MODULE.Block("paragraph", "\u5185\u5bb9"),
+        ]
+
+        promoted = MODULE.promote_appendix_items(blocks)
+        sections = MODULE.split_sections(promoted)
+
+        self.assertEqual(promoted[1].level, 2)
+        self.assertEqual([heading.text for heading in sections[1].heading_path], ["\u9644\u5f55", "\u4e00\u3001\u4e24\u5cb8\u7a0e\u6cd5\u672f\u8bed\u5bf9\u6bd4\u8868"])
 
     def test_looks_like_heading_rejects_toc_entry(self):
         level = MODULE.looks_like_heading(
@@ -158,6 +258,134 @@ class PdfSectionToDocxTests(unittest.TestCase):
             12.0,
         )
         self.assertIsNone(level)
+
+    def test_looks_like_heading_rejects_month_day_sentence_fragment(self):
+        level = MODULE.looks_like_heading(
+            "12 \u6708 31 \u65e5\u524d\u6240\u6301\u6709\u80a1\u4efd\u6709\u9650\u516c\u53f8\u80a1\u7968\u6216\u516c\u53f8\u503a\uff0c\u5176\u4ea4\u6613\u6240\u5f97\u989d\u4e2d\uff0c",
+            18.0,
+            12.0,
+        )
+        self.assertIsNone(level)
+
+    def test_looks_like_heading_rejects_numbered_measurement_fragment(self):
+        level = MODULE.looks_like_heading(
+            "601.4 \u4ebf\u7f8e\u5143\uff0c\u81ea\u53f0\u6e7e\u5730\u533a\u8fdb\u53e3\u4e3a2,006.6 \u4ebf\u7f8e\u5143\uff0c\u5bf9\u53f0\u8d38\u6613\u9006\u5dee",
+            15.0,
+            12.0,
+        )
+        self.assertIsNone(level)
+
+    def test_looks_like_heading_rejects_integer_led_body_fragment(self):
+        level = MODULE.looks_like_heading(
+            "10 \u5e74\u4e14\u672a\u4e0a\u5e02\uff08\u67dc\uff09\u7684\u7814\u53d1\u5236\u9020\u516c\u53f8\u6216\u6210\u7acb\u672a",
+            16.0,
+            12.0,
+        )
+        self.assertIsNone(level)
+
+    def test_looks_like_heading_keeps_decimal_section_heading(self):
+        level = MODULE.looks_like_heading(
+            "2.3.1.3 \u7a0e\u7387",
+            16.0,
+            12.0,
+        )
+        self.assertEqual(level, 4)
+
+    def test_looks_like_heading_rejects_bracketed_note_line(self):
+        level = MODULE.looks_like_heading(
+            "\u3010\u6309\u53f0\u6e7e\u5730\u533a\u672f\u8bed\u62fc\u97f3\u6392\u5e8f\u3011",
+            16.0,
+            12.0,
+        )
+        self.assertIsNone(level)
+
+    def test_looks_like_heading_rejects_formula_like_fragment(self):
+        level = MODULE.looks_like_heading(
+            "1 + \u7a0e\u7387",
+            16.0,
+            12.0,
+        )
+        self.assertIsNone(level)
+
+    def test_looks_like_heading_keeps_appendix_letter_heading(self):
+        level = MODULE.looks_like_heading(
+            "\u9644\u5f55 A \u963f\u5c14\u53ca\u5229\u4e9a\u653f\u5e9c\u90e8\u95e8\u548c\u76f8\u5173\u673a\u6784\u4e00\u89c8\u8868",
+            16.0,
+            12.0,
+        )
+        self.assertEqual(level, 1)
+
+    def test_looks_like_heading_rejects_appendix_toc_entry(self):
+        level = MODULE.looks_like_heading(
+            "\u9644\u5f55 B \u963f\u5c14\u53ca\u5229\u4e9a\u7b7e\u8ba2\u7a0e\u6536\u6761\u7ea6\u4e00\u89c8\u8868.....................................................166",
+            16.0,
+            12.0,
+        )
+        self.assertIsNone(level)
+
+    def test_looks_like_heading_rejects_circled_enumeration(self):
+        level = MODULE.looks_like_heading(
+            "\u2461\u4e2a\u4eba",
+            16.0,
+            12.0,
+        )
+        self.assertIsNone(level)
+
+    def test_looks_like_heading_rejects_latin_enumeration(self):
+        level = MODULE.looks_like_heading(
+            "A.\u5229\u7528\u5b58\u6b3e\u8d26\u6237\u9000\u7a0e",
+            16.0,
+            12.0,
+        )
+        self.assertIsNone(level)
+
+    def test_looks_like_heading_rejects_short_unumbered_body_item(self):
+        level = MODULE.looks_like_heading(
+            "\u2462\u80a1\u606f",
+            18.0,
+            12.0,
+        )
+        self.assertIsNone(level)
+
+    def test_looks_like_heading_rejects_orphan_short_fragment(self):
+        level = MODULE.looks_like_heading(
+            "\u89c8\u8868",
+            18.0,
+            12.0,
+        )
+        self.assertIsNone(level)
+
+    def test_looks_like_heading_rejects_person_name_line(self):
+        level = MODULE.looks_like_heading(
+            "\u8c2d\u6620\u8377 \u674e\u73c2",
+            18.0,
+            12.0,
+        )
+        self.assertIsNone(level)
+
+    def test_looks_like_heading_keeps_short_unnumbered_heading(self):
+        level = MODULE.looks_like_heading(
+            "\u524d\u8a00",
+            18.0,
+            12.0,
+        )
+        self.assertEqual(level, 1)
+
+    def test_looks_like_heading_keeps_table_of_contents_heading(self):
+        level = MODULE.looks_like_heading(
+            "\u76ee\u5f55",
+            18.0,
+            12.0,
+        )
+        self.assertEqual(level, 1)
+
+    def test_looks_like_heading_keeps_appendix_heading(self):
+        level = MODULE.looks_like_heading(
+            "\u9644\u5f55",
+            18.0,
+            12.0,
+        )
+        self.assertEqual(level, 1)
 
 
 if __name__ == "__main__":

@@ -27,7 +27,7 @@ python D:\codex-data\skills\pdf-section-to-docx\scripts\pdf_section_to_docx.py <
 
 Optional flags:
 
-- `--output-dir <dir>` to choose the export folder
+- `--output-dir <dir>` to choose the export folder; when omitted, output goes to `D:\Codex_output\<pdf-stem>-sections`
 - `--ocr-lang chi_sim+eng` to set Tesseract languages
 - `--min-direct-chars 80` to tune when OCR starts
 
@@ -40,6 +40,7 @@ Optional flags:
 - Preserve the full heading chain inside each DOCX by re-adding ancestor headings before section content.
 - Convert each detected table into prose paragraphs instead of leaving tabular layout in the DOCX, preferably carrying table title and source into the prose block.
 - Write `manifest.json` alongside the DOCX files so the run can be audited.
+- When no explicit `--output-dir` is passed, save the run under `D:\Codex_output`.
 
 ## Fail-Closed Rules
 
