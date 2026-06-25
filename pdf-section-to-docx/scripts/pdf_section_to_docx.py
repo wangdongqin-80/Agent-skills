@@ -30,9 +30,18 @@ CIRCLED_ENUM_RE = re.compile(r"^[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮�
 LATIN_ENUM_RE = re.compile(r"^[A-Z][.．、]")
 APPENDIX_ITEM_RE = re.compile(r"^[一二三四五六七八九十]+[、.．]\s*.+$")
 APPENDIX_LETTER_HEADING_RE = re.compile(r"^附录\s*[A-ZＡ-Ｚ](?:[\s\u3000]+|[：:])?.+$")
+APPENDIX_CHINESE_HEADING_RE = re.compile(r"^附录[一二三四五六七八九十]+(?:[\s\u3000]+|[：:])?.+$")
 PERSON_NAME_LINE_RE = re.compile(r"^[\u4e00-\u9fff]{2,4}(?:[\s\u3000]+[\u4e00-\u9fff]{2,4}){1,}$")
 FORMAL_SHORT_HEADINGS = {"前言", "目录", "附录"}
 HEADING_SUFFIX_FRAGMENTS = {"业", "表", "图", "览表", "税率表"}
+
+
+def is_appendix_heading(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", text.strip())
+    return bool(
+        APPENDIX_LETTER_HEADING_RE.match(normalized)
+        or APPENDIX_CHINESE_HEADING_RE.match(normalized)
+    )
 
 
 def heading_remainder_looks_like_body(text: str) -> bool:
@@ -218,7 +227,7 @@ def should_merge_heading_pair(previous: Block, current: Block) -> bool:
     if is_formal_short_heading(previous_text + current_text):
         return True
 
-    if APPENDIX_LETTER_HEADING_RE.match(previous_text):
+    if is_appendix_heading(previous_text):
         if is_numbered_heading(current_text):
             return False
         if PAREN_ENUM_RE.match(current_text) or CIRCLED_ENUM_RE.match(current_text):
@@ -278,7 +287,7 @@ def merge_heading_fragments(blocks: Sequence[Block]) -> List[Block]:
             compact_current = re.sub(r"\s+", "", current_text)
             if (
                 previous.kind == "heading"
-                and APPENDIX_LETTER_HEADING_RE.match(previous_text)
+                and is_appendix_heading(previous_text)
                 and block.kind == "paragraph"
                 and compact_current in HEADING_SUFFIX_FRAGMENTS
                 and compact_current not in FORMAL_SHORT_HEADINGS
@@ -421,7 +430,7 @@ def looks_like_heading(text: str, font_size: Optional[float], body_font_size: fl
     if is_formal_short_heading(normalized):
         return 1
 
-    if APPENDIX_LETTER_HEADING_RE.match(normalized):
+    if is_appendix_heading(normalized):
         return 1
 
     if PAREN_ENUM_RE.match(normalized):

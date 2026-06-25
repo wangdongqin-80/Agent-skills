@@ -181,6 +181,17 @@ class PdfSectionToDocxTests(unittest.TestCase):
         self.assertEqual(len(merged), 1)
         self.assertEqual(merged[0].text, "\u9644\u5f55 A \u963f\u5c14\u53ca\u5229\u4e9a\u653f\u5e9c\u90e8\u95e8\u548c\u76f8\u5173\u673a\u6784\u4e00 \u89c8\u8868")
 
+    def test_merge_multiline_appendix_chinese_number_heading(self):
+        blocks = [
+            MODULE.Block("heading", "\u9644\u5f55\u4e8c \u963f\u585e\u62dc\u7586\u7b7e\u8ba2\u7a0e\u6536\u6761\u7ea6\u4e00", level=1),
+            MODULE.Block("heading", "\u89c8\u8868", level=1),
+        ]
+
+        merged = MODULE.merge_multiline_headings(blocks)
+
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0].text, "\u9644\u5f55\u4e8c \u963f\u585e\u62dc\u7586\u7b7e\u8ba2\u7a0e\u6536\u6761\u7ea6\u4e00 \u89c8\u8868")
+
     def test_merge_appendix_heading_with_short_paragraph_fragment(self):
         blocks = [
             MODULE.Block("heading", "\u9644\u5f55 D \u5728\u963f\u5c14\u53ca\u5229\u4e9a\u6295\u8d44\u7684\u4e3b\u8981\u4e2d\u8d44\u4f01", level=1),
@@ -310,6 +321,14 @@ class PdfSectionToDocxTests(unittest.TestCase):
     def test_looks_like_heading_keeps_appendix_letter_heading(self):
         level = MODULE.looks_like_heading(
             "\u9644\u5f55 A \u963f\u5c14\u53ca\u5229\u4e9a\u653f\u5e9c\u90e8\u95e8\u548c\u76f8\u5173\u673a\u6784\u4e00\u89c8\u8868",
+            16.0,
+            12.0,
+        )
+        self.assertEqual(level, 1)
+
+    def test_looks_like_heading_keeps_appendix_chinese_number_heading(self):
+        level = MODULE.looks_like_heading(
+            "\u9644\u5f55\u4e8c \u963f\u585e\u62dc\u7586\u7b7e\u8ba2\u7a0e\u6536\u6761\u7ea6\u4e00\u89c8\u8868",
             16.0,
             12.0,
         )
