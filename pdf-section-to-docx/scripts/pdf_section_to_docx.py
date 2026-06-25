@@ -21,6 +21,7 @@ PAREN_ENUM_RE = re.compile(r"^[（(]\s*\d+\s*[)）]")
 GUIDE_TITLE_RE = re.compile(r".{2,}指南$")
 TABLE_TITLE_RE = re.compile(r"^表\s*\d+")
 TABLE_SOURCE_RE = re.compile(r"^(数据来源|来源)[:：]")
+DATE_LED_SENTENCE_RE = re.compile(r"^\d{4}\s*年(?:\s*\d{1,2}\s*月(?:\s*\d{1,2}\s*日)?)?(起|，|,|度|内|末|初)")
 
 
 @dataclasses.dataclass
@@ -138,6 +139,52 @@ def split_sections(blocks: Sequence[Block]) -> List[Section]:
     return sections
 
 
+def is_numbered_heading(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", text.strip())
+    return bool(HEADING_NUMBER_RE.match(normalized) or CHINESE_HEADING_RE.match(normalized))
+
+
+def should_merge_heading_pair(previous: Block, current: Block) -> bool:
+    if previous.kind != "heading" or current.kind != "heading":
+        return False
+    if (previous.level or 1) != (current.level or 1):
+        return False
+
+    previous_text = re.sub(r"\s+", " ", previous.text.strip())
+    current_text = re.sub(r"\s+", " ", current.text.strip())
+    if not previous_text or not current_text:
+        return False
+
+    if not CHINESE_HEADING_RE.match(previous_text):
+        return False
+    if is_numbered_heading(current_text):
+        return False
+    if PAREN_ENUM_RE.match(current_text):
+        return False
+    if is_guide_title(current_text):
+        return False
+    if len(current_text) > 20:
+        return False
+
+    return True
+
+
+def merge_multiline_headings(blocks: Sequence[Block]) -> List[Block]:
+    merged: List[Block] = []
+    for block in blocks:
+        if merged and should_merge_heading_pair(merged[-1], block):
+            previous = merged[-1]
+            merged[-1] = Block(
+                "heading",
+                f"{previous.text.strip()} {block.text.strip()}",
+                level=previous.level,
+                bbox=previous.bbox,
+            )
+            continue
+        merged.append(block)
+    return merged
+
+
 def is_guide_title(text: str) -> bool:
     normalized = re.sub(r"\s+", "", text.strip())
     return bool(normalized and GUIDE_TITLE_RE.fullmatch(normalized))
@@ -221,6 +268,9 @@ def looks_like_heading(text: str, font_size: Optional[float], body_font_size: fl
         return None
 
     if is_guide_title(normalized):
+        return None
+
+    if DATE_LED_SENTENCE_RE.match(normalized):
         return None
 
     if TOC_LEADER_RE.search(normalized):
@@ -461,6 +511,7 @@ def process_pdf(input_pdf: Path, output_dir: Path, ocr_lang: str, min_direct_cha
             used_ocr_pages.append(page_index)
 
     all_blocks = filter_redundant_guide_lines(all_blocks)
+    all_blocks = merge_multiline_headings(all_blocks)
     guide_title = find_guide_title(all_blocks)
     sections = split_sections(all_blocks)
     if not sections:

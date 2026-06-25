@@ -98,6 +98,27 @@ class PdfSectionToDocxTests(unittest.TestCase):
         self.assertEqual(sections[0].title, "\u7b2c\u4e00\u8282")
         self.assertEqual([block.text for block in sections[0].content], ["\u6b63\u6587"])
 
+    def test_merge_multiline_chapter_heading(self):
+        blocks = [
+            MODULE.Block("heading", "\u7b2c\u516d\u7ae0 \u5728\u963f\u5c14\u5df4\u5c3c\u4e9a\u6295\u8d44\u53ef\u80fd\u5b58\u5728\u7684", level=1),
+            MODULE.Block("heading", "\u7a0e\u6536\u98ce\u9669", level=1),
+            MODULE.Block("heading", "6.1 \u4fe1\u606f\u62a5\u544a\u98ce\u9669", level=2),
+            MODULE.Block("paragraph", "\u6b63\u6587"),
+        ]
+
+        merged = MODULE.merge_multiline_headings(blocks)
+        sections = MODULE.split_sections(merged)
+
+        self.assertEqual(sections[0].title, "\u7b2c\u516d\u7ae0 \u5728\u963f\u5c14\u5df4\u5c3c\u4e9a\u6295\u8d44\u53ef\u80fd\u5b58\u5728\u7684 \u7a0e\u6536\u98ce\u9669")
+        self.assertEqual(sections[1].title, "6.1 \u4fe1\u606f\u62a5\u544a\u98ce\u9669")
+        self.assertEqual(
+            [heading.text for heading in sections[1].heading_path],
+            [
+                "\u7b2c\u516d\u7ae0 \u5728\u963f\u5c14\u5df4\u5c3c\u4e9a\u6295\u8d44\u53ef\u80fd\u5b58\u5728\u7684 \u7a0e\u6536\u98ce\u9669",
+                "6.1 \u4fe1\u606f\u62a5\u544a\u98ce\u9669",
+            ],
+        )
+
     def test_looks_like_heading_rejects_toc_entry(self):
         level = MODULE.looks_like_heading(
             "1.1 \u8fd1\u5e74\u7ecf\u6d4e\u53d1\u5c55\u60c5\u51b5............................................................1",
@@ -126,6 +147,14 @@ class PdfSectionToDocxTests(unittest.TestCase):
         level = MODULE.looks_like_heading(
             "\uff085\uff09\u7ecf\u6d4e\u589e\u957f\u60c5\u51b5",
             14.0,
+            12.0,
+        )
+        self.assertIsNone(level)
+
+    def test_looks_like_heading_rejects_date_led_body_sentence(self):
+        level = MODULE.looks_like_heading(
+            "2021 \u5e74 1 \u6708 1 \u65e5\u8d77\uff0c\u7eb3\u7a0e\u4e49\u52a1\u4eba\u4e3a\u5728\u963f\u5c14\u5df4\u5c3c\u4e9a\u5e74\u6536\u5165\u8d85\u8fc7 800",
+            16.0,
             12.0,
         )
         self.assertIsNone(level)
