@@ -1,0 +1,4 @@
+interface:
+  display_name: "PDF Section to DOCX"
+  short_description: "Split PDF sections into Word files"
+  default_prompt: "Use $pdf-section-to-docx to OCR a PDF, rewrite tables as prose, and export one Word file per section."
